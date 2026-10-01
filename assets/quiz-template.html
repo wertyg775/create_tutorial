@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<!--
+  Checkpoint quiz template (self-contained: inline CSS + JS, no external assets).
+
+  Replace each placeholder exactly once (placeholders appear ONLY here):
+    {{QUIZ_TITLE}}       page <title> and <h1>, e.g. "Operating Systems &mdash; Quiz 3: CPU Scheduling"
+    {{QUIZ_META}}        italic subtitle, e.g. "Unit: Scheduling &middot; 25 questions &middot; closed book"
+    {{QUIZ_INSTRUCTIONS}} inner HTML of the instructions box (goal, target score, how to grade)
+    {{QUIZ_QUESTIONS}}   all quiz markup: one <h2> + <ol class="questions"> per section
+    {{QUIZ_KEY}}         JS string expression: correct letters in question order, one quoted
+                         chunk per section with a comment, e.g. ("BDAC" + /* Section A */ "CA")
+    {{QUIZ_WHY}}         JS array literal of explanation strings, one per question, in order
+    {{QUIZ_FOOTER}}      footer HTML: source material credits
+
+  Do not modify the <style> block or the <script> block.
+  Validate the result with scripts/validate_quiz.py from the skill directory.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{QUIZ_TITLE}}</title>
+<style>
+  :root { color-scheme: light; }
+  html, body { background: #ffffff; color: #000000; }
+  body {
+    font-family: "Times New Roman", Georgia, serif;
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 5rem;
+    line-height: 1.55;
+    font-size: 1.05rem;
+  }
+  h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; line-height: 1.25; }
+  h1 { font-size: 1.7rem; border-bottom: 2px solid #000; padding-bottom: 0.5rem; }
+  h2 { font-size: 1.3rem; margin-top: 2.5rem; border-bottom: 1px solid #999; padding-bottom: 0.25rem; }
+  .meta { font-style: italic; margin-top: 0.25rem; }
+  .instructions { border: 1.5px solid #000; padding: 0.9rem 1.1rem; margin: 1.5rem 0; }
+  .instructions .label {
+    font-variant: small-caps; letter-spacing: 0.05em;
+    font-weight: bold; display: block; margin-bottom: 0.35rem;
+  }
+  code {
+    font-family: "Courier New", Courier, monospace; font-size: 0.92em;
+    background: #fff; border: 1px solid #ccc; padding: 0 0.25rem;
+  }
+  /* No counter-reset on ol.questions: Q numbering is continuous across sections (Q1..QN). */
+  ol.questions { list-style: none; padding-left: 0; }
+  ol.questions > li {
+    counter-increment: q;
+    counter-reset: choice;
+    margin: 1.6rem 0;
+    padding-left: 3.4rem;
+    position: relative;
+    break-inside: avoid;
+  }
+  ol.questions > li::before {
+    content: "Q" counter(q) ".";
+    position: absolute; left: 0; font-weight: bold;
+  }
+  .choices { list-style: none; padding-left: 0; margin: 0.5rem 0 0; }
+  .choices li { margin: 0.3rem 0; padding-left: 1.6rem; position: relative; }
+  .choices li::before {
+    content: "(" counter(choice, upper-alpha) ")";
+    counter-increment: choice;
+    position: absolute; left: 0;
+    font-weight: bold;
+  }
+  /* Tick box: injected by JS as first child of every option; shows a check
+     while picked, a check (green) on the correct option and a cross (red) on
+     a wrong pick after grading. */
+  .tickbox {
+    display: inline-block;
+    width: 0.95em; height: 0.95em;
+    border: 1.5px solid #000;
+    border-radius: 2px;
+    margin-right: 0.45rem;
+    vertical-align: -0.08em;
+    position: relative;
+    background: #fff;
+  }
+  .choices li.picked .tickbox::after,
+  .choices li.correct .tickbox::after {
+    content: "\2713";
+    position: absolute; top: -0.3em; left: 0.08em;
+    font-weight: bold; font-size: 0.95em; line-height: 1;
+  }
+  .choices li.correct .tickbox::after { color: #2d6a2d; }
+  .choices li.wrong .tickbox::after {
+    content: "\2717";
+    position: absolute; top: -0.32em; left: 0.06em;
+    font-weight: bold; font-size: 0.95em; line-height: 1;
+    color: #990000;
+  }
+  .topic-tag {
+    display: inline-block; font-size: 0.78rem; font-family: Georgia, serif;
+    font-variant: small-caps; letter-spacing: 0.06em;
+    border: 1px solid #000; padding: 0 0.4rem; margin-bottom: 0.35rem;
+  }
+  .schema-note {
+    border: 1.5px solid #000; padding: 0.9rem 1.1rem; margin-top: 3rem;
+    font-variant: small-caps; letter-spacing: 0.03em;
+  }
+  footer {
+    margin-top: 3rem; border-top: 1px solid #999; padding-top: 0.6rem;
+    font-size: 0.9rem; font-style: italic;
+  }
+
+  /* ---- interactive quiz ---- */
+  #quiz-bar {
+    position: sticky; top: 0; z-index: 10;
+    background: #fff; border: 1.5px solid #000; border-top: none;
+    padding: 0.6rem 1rem; display: flex; align-items: center; gap: 1rem;
+    font-family: Georgia, serif;
+  }
+  #quiz-bar button {
+    font: inherit; padding: 0.25rem 0.9rem;
+    border: 1.5px solid #000; background: #fff; cursor: pointer;
+  }
+  #quiz-bar button:hover { background: #eee; }
+  #quiz-bar button:disabled { opacity: 0.4; cursor: default; }
+  #quiz-score { font-weight: bold; }
+  .choices li { cursor: pointer; border-radius: 3px; padding: 0.15rem 0.3rem 0.15rem 1.9rem; }
+  .choices li:hover { background: #f2f2f2; }
+  .choices li.picked { outline: 1.5px solid #000; background: #f7f7f7; }
+  .choices li.correct { background: #d9ead3; outline: 1.5px solid #2d6a2d; }
+  .choices li.wrong { background: #f4cccc; outline: 1.5px solid #990000; }
+  .choices li.dim { opacity: 0.55; }
+  .explanation {
+    display: none; margin: 0.45rem 0 0; padding: 0.55rem 0.8rem;
+    border-left: 3px solid #000; background: #fafafa; font-size: 0.92rem;
+  }
+  .graded .explanation { display: block; }
+  .graded .choices li { cursor: default; }
+  .graded .choices li:hover { background: inherit; }
+</style>
+</head>
+<body>
+
+<h1>{{QUIZ_TITLE}}</h1>
+<p class="meta">{{QUIZ_META}}</p>
+
+<div class="instructions">
+  <span class="label">Instructions</span>
+  {{QUIZ_INSTRUCTIONS}}
+</div>
+<div id="quiz-bar">
+  <span id="quiz-progress">0 / 0 answered</span>
+  <span id="quiz-score"></span>
+  <button id="grade-btn" type="button">Grade quiz</button>
+  <button id="reset-btn" type="button" hidden>Reset</button>
+</div>
+
+{{QUIZ_QUESTIONS}}
+
+<div class="schema-note">
+End of questions &mdash; press <strong>Grade quiz</strong> above to score yourself and
+reveal explanations.
+</div>
+
+<footer>
+{{QUIZ_FOOTER}}
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // Answer key: correct letters in question order (Q1..QN).
+  var KEY = ({{QUIZ_KEY}}).split("");
+  // Explanations: one per question, same order.
+  var WHY = {{QUIZ_WHY}};
+  var LETTERS = ["A", "B", "C", "D", "E"];
+  var TARGET = Math.round(KEY.length * 0.8);
+
+  var questions = document.querySelectorAll("ol.questions > li");
+  var progressEl = document.getElementById("quiz-progress");
+  var scoreEl = document.getElementById("quiz-score");
+  var gradeBtn = document.getElementById("grade-btn");
+  var resetBtn = document.getElementById("reset-btn");
+
+  if (!progressEl || !scoreEl || !gradeBtn || !resetBtn) return;
+  if (questions.length !== KEY.length || WHY.length !== KEY.length) {
+    progressEl.textContent = "Structure error: " + questions.length + " questions, " +
+      KEY.length + " key entries, " + WHY.length + " explanations \u2014 counts must match";
+    gradeBtn.disabled = true;
+    return;
+  }
+
+  var picked = new Array(KEY.length).fill(-1);
+  var graded = false;
+
+  function updateBar() {
+    var answered = picked.filter(function (p) { return p >= 0; }).length;
+    progressEl.textContent = answered + " / " + KEY.length + " answered";
+    if (graded) {
+      var score = 0;
+      picked.forEach(function (p, i) { if (LETTERS[p] === KEY[i]) score++; });
+      scoreEl.textContent = "Score: " + score + " / " + KEY.length +
+        (score >= TARGET ? " \u2014 passed (target " + TARGET + ")"
+                         : " \u2014 target " + TARGET);
+    } else {
+      scoreEl.textContent = "";
+    }
+    gradeBtn.disabled = graded || answered < KEY.length;
+    gradeBtn.textContent = graded ? "Graded" : "Grade quiz";
+  }
+
+  questions.forEach(function (li, qi) {
+    var choices = li.querySelectorAll(".choices > li");
+    choices.forEach(function (choice) {
+      var box = document.createElement("span");
+      box.className = "tickbox";
+      box.setAttribute("aria-hidden", "true");
+      choice.insertBefore(box, choice.firstChild);
+    });
+    var why = document.createElement("p");
+    why.className = "explanation";
+    li.appendChild(why);
+
+    choices.forEach(function (choice, ci) {
+      choice.addEventListener("click", function () {
+        if (graded) return;
+        picked[qi] = ci;
+        choices.forEach(function (c, j) {
+          c.classList.toggle("picked", j === ci);
+          c.classList.remove("correct", "wrong", "dim");
+        });
+        updateBar();
+      });
+    });
+
+    li._choices = choices;
+    li._why = why;
+  });
+
+  gradeBtn.addEventListener("click", function () {
+    graded = true;
+    questions.forEach(function (li, qi) {
+      var answer = LETTERS.indexOf(KEY[qi]);
+      li._choices.forEach(function (c, j) {
+        c.classList.remove("picked");
+        if (j === answer) c.classList.add("correct");
+        else if (j === picked[qi]) c.classList.add("wrong");
+        else c.classList.add("dim");
+      });
+      li._why.textContent =
+        (picked[qi] === answer ? "Correct. " : "Answer: " + KEY[qi] + ". ") +
+        WHY[qi];
+      li.classList.add("graded");
+    });
+    updateBar();
+    resetBtn.hidden = false;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  resetBtn.addEventListener("click", function () {
+    graded = false;
+    picked.fill(-1);
+    questions.forEach(function (li) {
+      li._choices.forEach(function (c) {
+        c.classList.remove("picked", "correct", "wrong", "dim");
+      });
+      li._why.textContent = "";
+      li.classList.remove("graded");
+    });
+    resetBtn.hidden = true;
+    updateBar();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  updateBar();
+})();
+</script>
+
+</body>
+</html>
